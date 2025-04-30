@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BPM节奏游戏</title>
+    <style>
+        /* 原有样式保持不变 */
+        body { display: flex; flex-direction: column; align-items: center; font-family: Arial, sans-serif; }
+        #game-area { width: 300px; height: 300px; background-color: #eee; border-radius: 50%; margin: 20px;
+            display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer;
+            transition: background-color 0.1s; }
+        #controls { margin: 10px; }
+        .active { background-color: #ffdddd !important; }
+        #result { margin-top: 20px; font-size: 18px; }
+        /* 新增判定显示样式 */
+        #judgment {
+            margin-top: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            height: 30px;
+        }
+        /* 计时器样式 */
+        #timer {
+            margin-top: 10px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .hit {
+            font-weight: bold;
+            color: #800080; /* 紫色 */
+            text-shadow: 0 0 5px #800080, 0 0 10px #ff00ff, 0 0 15px #ff00ff;
+            transform: scale(1.5);
+        }
+        .far {
+            font-weight: bold;
+            color: #ffa500; /* 橘色 */
+            text-shadow: 0 0 3px #ffa500;
+            transform: scale(1.2);
+        }
+        .low {
+            font-weight: bold;
+            color: #008000; /* 绿色 */
+            text-shadow: 0 0 2px #008000;
+            transform: scale(1.1);
+        }
+        .out {
+            font-weight: bold;
+            color: #808080; /* 灰色 */
+            text-shadow: none;
+            transform: scale(1);
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <select id="bpm">
+            <option value="60">60 BPM</option>
+            <option value="120">120 BPM</option>
+            <option value="180">180 BPM</option>
+            <option value="240">240 BPM</option>
+            <option value="300">300 BPM</option>
+            <option value="360">360 BPM</option>
+        </select>
+        <button id="start">开始</button>
+    </div>
+    <div id="game-area">点击开始后<br>按节奏敲击</div>
+    <div id="timer">持续 8 s</div>
+    <div id="judgment"></div>
+    <div id="deviation"></div>
+    <div id="result"></div>
+
+    <script>
+        const gameArea = document.getElementById('game-area');
+        const startBtn = document.getElementById('start');
+        const timerDiv = document.getElementById('timer');
+        let startTime;
+        let beatTimes = [];
+        let timeoutIds = [];
+        let currentBeatIndex = 0;
+        let totalBeats = 0;
+        let judgments = [];
+        let flashTimeout;
+        let timerInterval;
+
+        startBtn.addEventListener('click', startGame);
+        gameArea.addEventListener('click', recordTap);
+
+        function startGame() {
+            // currentBpm = parseInt(document.getElementById('bpm').value);
+            // const interval = 60000 / currentBpm;
+            startTime = Date.now();
+            beatTimes = [];
+            timeoutIds = [];
+            judgments = [];
+            currentBeatIndex = 0;
+            
+            // 获取当前选择的BPM值
+            const currentBpm = parseInt(document.getElementById('bpm').value);
+            const interval = 60000 / currentBpm; // 每个节拍的间隔时间（毫秒）
+            totalBeats = Math.round(currentBpm / 60 * 8); // 计算8秒内的总节拍数
+
+            // 生成目标时间点（根据BPM计算）
+            for (let i = 1; i <= totalBeats; i++) {
+                const targetTime = startTime + interval * i;
+                beatTimes.push(targetTime);
+
+                // 设置每个节拍的超时检测
+                const timeoutId = setTimeout(() => {
+                    judgments[currentBeatIndex] = { type: 'OUT', deviation: Infinity };
+                    displayJudgment('OUT');
+                    currentBeatIndex++;
+                }, targetTime + 100 - Date.now());
+                timeoutIds.push(timeoutId);
+            }
+
+            console.log("节拍时间点:", beatTimes);
+
+            setTimeout(endGame, 8005);
+            startBtn.disabled = true;
+            gameArea.textContent = "准备...";
+            
+            setTimeout(() => {
+                gameArea.textContent = "敲击！";
+            }, interval);
+
+            // 开始计时器
+            startTimer();
+        }
+
+        function flashBeat() {
+            const flashDuration = 100;
+            gameArea.classList.add('active');
+            clearTimeout(flashTimeout);
+            flashTimeout = setTimeout(() => {
+                gameArea.classList.remove('active');
+            }, flashDuration);
+        }
+
+        function recordTap() {
+            if (!startTime || currentBeatIndex >= totalBeats) return;
+            const tapTime = Date.now();
+            const targetTime = beatTimes[currentBeatIndex];
+            const deviation = tapTime - targetTime;
+            const absDeviation = Math.abs(deviation);
+
+            // 显示敲击效果
+            flashBeat();
+
+            // 提前120ms以上的点击忽略
+            if (deviation < -120) return;
+
+            let judgment = '';
+            if (absDeviation <= 40) {
+                judgment = 'HIT';
+            } else if (absDeviation <= 80) {
+                judgment = 'FAR';
+            } else if (absDeviation <= 120) {
+                judgment = 'LOW';
+            }      
+
+            // 记录判定结果
+            judgments[currentBeatIndex] = { 
+            type: judgment,
+            deviation: deviation
+            };
+            
+            // 显示判定结果
+            displayJudgment(judgment, deviation);
+            
+            // 清除当前节拍的超时检测
+            clearTimeout(timeoutIds[currentBeatIndex]);
+            currentBeatIndex++;
+        }
+
+        function displayJudgment(type, deviation) {
+            const judgmentDiv = document.getElementById('judgment');
+            const deviationDiv = document.getElementById('deviation');
+            judgmentDiv.textContent = `${type}`;
+            if (deviation !== undefined) {
+                const sign = deviation > 0 ? 'LATE' : 'EARLY';
+                deviationDiv.textContent += ` (${sign} ${Math.abs(deviation).toFixed(0)} ms)`;
+            }
+            // 根据判定类型设置样式
+            if (type === 'HIT') {
+                judgmentDiv.className = 'hit';
+            } else if (type === 'FAR') {
+                judgmentDiv.className = 'far';
+            } else if (type === 'LOW') {
+                judgmentDiv.className = 'low';
+            } else {
+                judgmentDiv.className = 'out';
+            }
+            
+            // 100ms后清除显示
+            setTimeout(() => {
+                judgmentDiv.className = '';
+                judgmentDiv.textContent = '';
+                deviationDiv.textContent = '';
+            }, 100);
+        }
+
+        function startTimer() {
+            timerDiv.textContent = "时间：0.0 s";
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+                timerDiv.textContent = `时间：${elapsedTime} s`;
+            }, 50);
+        }
+
+        function endGame() {
+            startBtn.disabled = false;
+            gameArea.textContent = "点击开始后\n按节奏敲击";
+            clearTimeout(flashTimeout);
+            clearInterval(timerInterval);
+            gameArea.classList.remove('active');
+
+            setTimeout(() => {
+                // 计算统计数据
+                let validHits = 0;
+                let totalDeviation = 0;
+
+                judgments.forEach(judgment => {
+                    if (['HIT', 'FAR', 'LOW'].includes(judgment.type)) {
+                        validHits++;
+                        totalDeviation += judgment.deviation;
+                    }
+                });
+
+                document.getElementById('result').innerHTML = 
+                    `<table border="1" style="border-collapse: collapse; text-align: center; width: 100%; font-family: Arial, sans-serif;">
+                        <thead style="background-color: #f2f2f2;">
+                            <tr>
+                                <th style="padding: 8px; border: 1px solid #ddd;">序号</th>
+                                <th style="padding: 8px; border: 1px solid #ddd;">判定</th>
+                                <th style="padding: 8px; border: 1px solid #ddd;">偏差</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${judgments.map((judgment, index) => 
+                                `<tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9f9f9'};">
+                                    <td style="padding: 8px; border: 1px solid #ddd;">${index + 1}</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">
+                                        <div class="${judgment.type ? judgment.type.toLowerCase() : ''}">${judgment.type || '-'}</div>
+                                    </td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">${
+                                        (judgment.type && judgment.type !== 'OUT' && judgment.deviation !== undefined) 
+                                        ? `${judgment.deviation > 0 ? 'LATE' : 'EARLY'} ${Math.abs(judgment.deviation).toFixed(0)} ms` 
+                                        : '-'
+                                    }</td>
+                                </tr>`
+                            ).join('')}
+                        </tbody>
+                     </table>`;
+            }, 200);
+
+            
+        }
+    </script>
+</body>
+</html>
